@@ -46,7 +46,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 msg = xr_client.recv(1024)
                 if (msg == b''):
                     print('XR Client Disconnected : Reading')
-                    break
+                    return
                 local_client.sendall(msg)
             except socket.error:
                 print('Socket Error: Reading')

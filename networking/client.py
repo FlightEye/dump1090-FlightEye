@@ -25,6 +25,8 @@ port = 55555
 global clientLock
 clientLock = False
 
+global sendLock
+sendLock = False
 
 #thread to listen for incoming messages
 def listen():
@@ -41,21 +43,26 @@ def listen():
 
 #sends json data over the 
 def send_json(json_str):
+    global sendLock
+    #Lock sending resource until thread has fully sent a message
+    while sendLock: pass
+    sendLock = True
     msgsize = len(json_str)
     # msgsize must be 3 digits long to fit server protocol, any very short or very long JSON strings are dropped
     if msgsize < 1000 or msgsize > 99:
-        print('Sending ' + json_str + '\n')
+        print('Sending ' +  json_str + '\n')
         client.sendall(bytes(str(msgsize), encoding= 'utf-8')) # send message size prior to sending json (assuming the message size is 3 digits)
         client.sendall(bytes(json_str, encoding = 'utf-8')) # send JSON message
     else:
         print("JSON String Too Large or Small: not sending string")
+    sendLock = False
 
 #Polls GPS data and sends through socket
 def send_gps_data():
         nx = gpsd.next()
                 
         if nx['class'] == 'TPV':
-            altitude = getattr(nx, 'altHAE', 0)
+            altitude = getattr(nx, 'alt', 0)
             track = getattr(nx, 'track', 0)
             speed = getattr(nx, 'speed', 0)
             latitude = getattr(nx,'lat', 0)

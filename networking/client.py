@@ -47,6 +47,7 @@ def send_json(json_str):
     #Lock sending resource until thread has fully sent a message
     while sendLock: pass
     sendLock = True
+
     msgsize = len(json_str)
     # msgsize must be 3 digits long to fit server protocol, any very short or very long JSON strings are dropped
     if msgsize < 1000 or msgsize > 99:
@@ -68,7 +69,7 @@ def send_gps_data():
             latitude = getattr(nx,'lat', 0)
             longitude = getattr(nx,'lon', 0)
             climb = getattr(nx, 'climb', 0)
-            time = str(datetime.now()).split()[1]
+            time = '0.0'
             icao = 'USERCRAFT'
 
             gps_dict = dict({'alt': altitude, 'track': track, 'speed':speed, 'lon':longitude, 'lat': latitude, 'climb': climb, 'time': time, 'icao': icao, 'isGPS':'true'})
@@ -100,7 +101,6 @@ def send_aircraft_data(path):
             
             #airplane is within maximum filtering distance
             if rel_dist_miles < filtering_distance_miles:
-                aircraft['seen'] = str(datetime.now()).split()[1] #retrieves active time of sending
                 aircraft.update({'isGPS':'false'})
                 j_aircraft = json.dumps(aircraft)
                 send_json(j_aircraft)

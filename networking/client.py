@@ -9,10 +9,12 @@ from datetime import datetime
 from gps import *
 
 #global filtering distance (miles)
-filtering_distance_miles = 1000
+filtering_distance_max_miles = 100
+filtering_distance_min_miles = 0.1
 
-#current lat and lon of headset
-cur_location = (38.895616, -77.044122) #hardcoded for now (wash DC)
+#current lat and lon of raspberry pi (used for filtering)
+global cur_location
+cur_location = (38.895616, -77.044122) #hardcoded at start (Wash, DC)
 
 #configure gpsd
 gpsd = gps(mode=WATCH_ENABLE|WATCH_NEWSTYLE)
@@ -60,25 +62,30 @@ def send_json(json_str):
 
 #Polls GPS data and sends through socket
 def send_gps_data():
-        nx = gpsd.next()
+    global cur_location
+    nx = gpsd.next()
                 
-        if nx['class'] == 'TPV':
-            altitude = getattr(nx, 'alt', 0)
-            track = getattr(nx, 'track', 0)
-            speed = getattr(nx, 'speed', 0)
-            latitude = getattr(nx,'lat', 0)
-            longitude = getattr(nx,'lon', 0)
-            climb = getattr(nx, 'climb', 0)
-            time = '0.0'
-            icao = 'USERCRAFT'
+    if nx['class'] == 'TPV':
+        altitude = getattr(nx, 'alt', 0)
+        track = getattr(nx, 'track', 0)
+        speed = getattr(nx, 'speed', 0)
+        latitude = getattr(nx,'lat', 10)
+        longitude = getattr(nx,'lon', 10)
+        climb = getattr(nx, 'climb', 0)
+        time = '0.0'
+        icao = 'USERCRAFT'
 
-            gps_dict = dict({'alt': altitude, 'track': track, 'speed':speed, 'lon':longitude, 'lat': latitude, 'climb': climb, 'time': time, 'icao': icao, 'isGPS':'true'})
-            json_gps = json.dumps(gps_dict)
-            send_json(json_gps)
-            gpsd.next()
-        else:
-            gpsd.next()
-            print('GPS Poll Failed')
+        #set current location to new GPS
+        if (latitude != 0 and longitude != 0):
+            cur_location = (latitude, longitude)
+
+        gps_dict = dict({'alt': altitude, 'track': track, 'speed':speed, 'lon':longitude, 'lat': latitude, 'climb': climb, 'time': time, 'icao': icao, 'isGPS':'true'})
+        json_gps = json.dumps(gps_dict)
+        send_json(json_gps)
+        gpsd.next()
+    else:
+        gpsd.next()
+        print('GPS Poll Failed')
 
 #Controls the GPS polling thread
 def run_gps_thread():
@@ -91,6 +98,7 @@ def run_gps_thread():
 
 #Parses aircraft JSON data and sends valid aircraft through socket
 def send_aircraft_data(path):
+    global cur_location
     f = open(path, 'r+')
     f_json = json.load(f)
     for aircraft in f_json['aircraft']:
@@ -99,8 +107,8 @@ def send_aircraft_data(path):
             aircraft_location = (aircraft['lat'], aircraft['lon'])
             rel_dist_miles = hs.haversine(cur_location, aircraft_location, unit = Unit.MILES)
             
-            #airplane is within maximum filtering distance
-            if rel_dist_miles < filtering_distance_miles:
+            #airplane is within maximum and minimum filtering distance
+            if rel_dist_miles < filtering_distance_max_miles and rel_dist_miles > filtering_distance_min_miles:
                 aircraft.update({'isGPS':'false'})
                 j_aircraft = json.dumps(aircraft)
                 send_json(j_aircraft)

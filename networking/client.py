@@ -4,15 +4,18 @@ import threading
 import json
 import time
 import haversine as hs
+import signal
 from haversine import Unit
 from datetime import datetime
 from gps import *
 
 #global filtering distance (miles)
-filtering_distance_miles = 1000
+filtering_distance_max_miles = 100
+filtering_distance_min_miles = 0.1
 
-#current lat and lon of headset
-cur_location = (38.895616, -77.044122) #hardcoded for now (wash DC)
+#current lat and lon of raspberry pi (used for filtering)
+global cur_location
+cur_location = (38.895616, -77.044122) #hardcoded at start (Wash, DC) (lat, lon)
 
 #configure gpsd
 gpsd = gps(mode=WATCH_ENABLE|WATCH_NEWSTYLE)
@@ -47,7 +50,6 @@ def send_json(json_str):
     #Lock sending resource until thread has fully sent a message
     while sendLock: pass
     sendLock = True
-
     msgsize = len(json_str)
     # msgsize must be 3 digits long to fit server protocol, any very short or very long JSON strings are dropped
     if msgsize < 1000 or msgsize > 99:
@@ -60,30 +62,34 @@ def send_json(json_str):
 
 #Polls GPS data and sends through socket
 def send_gps_data():
-        nx = gpsd.next()
+    global cur_location
+    nx = gpsd.next()
                 
-        if nx['class'] == 'TPV':
-            altitude = getattr(nx, 'alt', 0)
-            track = getattr(nx, 'track', 0)
-            speed = getattr(nx, 'speed', 0)
-            latitude = getattr(nx,'lat', 0)
-            longitude = getattr(nx,'lon', 0)
-            climb = getattr(nx, 'climb', 0)
-            time = '0.0'
-            icao = 'USERCRAFT'
+    if nx['class'] == 'TPV':
+        altitude = getattr(nx, 'altHAE', 0)
+        track = getattr(nx, 'track', 0)
+        speed = getattr(nx, 'speed', 0)
+        latitude = getattr(nx,'lat', 0)
+        longitude = getattr(nx,'lon', 0)
+        climb = getattr(nx, 'climb', 0)
+        time = '0.0'
+        icao = 'USERCRAFT'
 
-            gps_dict = dict({'alt': altitude, 'track': track, 'speed':speed, 'lon':longitude, 'lat': latitude, 'climb': climb, 'time': time, 'icao': icao, 'isGPS':'true'})
-            json_gps = json.dumps(gps_dict)
-            send_json(json_gps)
-            gpsd.next()
-        else:
-            gpsd.next()
-            print('GPS Poll Failed')
+        #set current location to new GPS
+        if (latitude != 0 and longitude != 0):
+            cur_location = (latitude, longitude)
+
+        gps_dict = dict({'alt': altitude, 'track': track, 'speed':speed, 'lon':longitude, 'lat': latitude, 'climb': climb, 'time': time, 'icao': icao, 'isGPS':'true'})
+        json_gps = json.dumps(gps_dict)
+        send_json(json_gps)
+        gpsd.next()
+    else:
+        gpsd.next()
+        print('GPS Poll Failed')
 
 #Controls the GPS polling thread
 def run_gps_thread():
     global clientLock
-
     while True:
         while clientLock: pass
         send_gps_data()
@@ -91,16 +97,16 @@ def run_gps_thread():
 
 #Parses aircraft JSON data and sends valid aircraft through socket
 def send_aircraft_data(path):
+    global cur_location
     f = open(path, 'r+')
     f_json = json.load(f)
     for aircraft in f_json['aircraft']:
         #data has been updated within last second and lat and lon exists
         if aircraft['seen'] < 1.0 and 'lat' in aircraft and 'lon' in aircraft:
             aircraft_location = (aircraft['lat'], aircraft['lon'])
-            rel_dist_miles = hs.haversine(cur_location, aircraft_location, unit = Unit.MILES)
-            
-            #airplane is within maximum filtering distance
-            if rel_dist_miles < filtering_distance_miles:
+            rel_dist_miles = hs.haversine(aircraft_location, cur_location, unit = Unit.MILES)
+            #airplane is within maximum and minimum filtering distance
+            if rel_dist_miles < filtering_distance_max_miles and rel_dist_miles > filtering_distance_min_miles:
                 aircraft.update({'isGPS':'false'})
                 j_aircraft = json.dumps(aircraft)
                 send_json(j_aircraft)
@@ -111,12 +117,19 @@ def run_aircraft_thread():
     while True:
         #if XR client has disconnected, lock loop until client reconnects
         while clientLock: pass
-
         opentime = datetime.now()
         send_aircraft_data("../dump1090/jsondata/aircraft.json")
         #delay next read for a second (takes into account time it took for last read: 1.0 - time to read last)
         if (datetime.now() - opentime).total_seconds() < 1.0:
             time.sleep(1.0 - (datetime.now() - opentime).total_seconds())
+
+#Handle shutdown on CTRL+C
+def signal_handler(sig, frame):
+    print('SIGINT handled, closing sockets')
+    client.close()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
 
 if __name__ == '__main__':
     #Connect to server socket

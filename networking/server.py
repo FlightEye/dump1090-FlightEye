@@ -1,6 +1,7 @@
 import socket
 import sys
 import threading
+import signal
 
 HOST = "10.0.0.166"  # Standard loopback interface address (localhost)
 PORT = 55555 # Port to listen on (non-privileged ports are > 1023)
@@ -9,8 +10,8 @@ PORT = 55555 # Port to listen on (non-privileged ports are > 1023)
 global exit
 exit = False
 
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     #Recieves a msgsize amount of bytes from recv_client and forwards it to send_client
     def receive_and_send(recv_client:socket, send_client:socket, msgsize):
         msgsize = int(msgsize)
@@ -57,11 +58,20 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         print(f"Reconnected to {xr_client_addr2}")
         local_client.sendall(bytes('strt', encoding = 'utf-8')) #tell local client to start sending again
         return xr_client
+    
+    #handle shutdown on CTRL+C
+    def signal_handler(sig, frame):
+        print('SIGINT handled, closing sockets')
+        s.close()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
 
     if __name__ == '__main__':
         #CREATE INITIAL CONNECTION
         s.bind((HOST, PORT))
         s.listen()
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         local_client, local_client_addr = s.accept()
         print(f"Connected by {local_client_addr}")

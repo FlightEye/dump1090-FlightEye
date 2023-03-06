@@ -10,7 +10,7 @@ from datetime import datetime
 from gps import *
 
 #global filtering distance (miles)
-filtering_distance_max_miles = 100
+filtering_distance_max_miles = 20
 filtering_distance_min_miles = 0.1
 
 #current lat and lon of raspberry pi (used for filtering)
@@ -66,7 +66,7 @@ def send_gps_data():
     nx = gpsd.next()
                 
     if nx['class'] == 'TPV':
-        altitude = getattr(nx, 'altHAE', 0)
+        altitude = getattr(nx, 'alt', 0)
         track = getattr(nx, 'track', 0)
         speed = getattr(nx, 'speed', 0)
         latitude = getattr(nx,'lat', 0)

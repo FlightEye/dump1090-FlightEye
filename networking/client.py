@@ -8,6 +8,8 @@ import signal
 from haversine import Unit
 from datetime import datetime
 from gps import *
+from icao_nnumber_converter_us import n_to_icao, icao_to_n
+
 
 #global filtering distance (miles)
 global filtering_distance_max_miles 
@@ -118,6 +120,7 @@ def send_aircraft_data(path):
             #airplane is within maximum and minimum filtering distance
             if rel_dist_miles < filtering_distance_max_miles and rel_dist_miles > filtering_distance_min_miles:
                 aircraft.update({'isGPS':'false'})
+                aircraft.update({'hex':icao_to_n(aircraft['hex'])})
                 j_aircraft = json.dumps(aircraft)
                 send_json(j_aircraft)
     f.close()

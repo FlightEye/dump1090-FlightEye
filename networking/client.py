@@ -10,7 +10,8 @@ from datetime import datetime
 from gps import *
 
 #global filtering distance (miles)
-filtering_distance_max_miles = 20
+global filtering_distance_max_miles 
+filtering_distance_max_miles = 12.5
 filtering_distance_min_miles = 0.1
 
 #current lat and lon of raspberry pi (used for filtering)
@@ -33,14 +34,22 @@ sendLock = False
 
 #thread to listen for incoming messages
 def listen():
+    global filtering_distance_max_miles
     global clientLock
     while True:
         try:
-            data = client.recv(4).decode()
-            if data == 'stop':
+            msgsize = int(client.recv(1).decode())
+            msg = bytearray()
+            while len(msg) < msgsize :
+                packet = client.recv(msgsize - len(msg)) # Receieve the incoming message from recv_client
+                msg.extend(packet)
+            data = msg.decode()
+            if  data == 'stop':
                 clientLock = True
             elif data == 'strt':
                 clientLock = False
+            else:
+                filtering_distance_max_miles = float(data) # Update the filtering distance based on data from headset
         except socket.error:
             print('Failed to recieve data')
 
@@ -69,8 +78,8 @@ def send_gps_data():
         altitude = getattr(nx, 'alt', 0)
         track = getattr(nx, 'track', 0)
         speed = getattr(nx, 'speed', 0)
-        latitude = getattr(nx,'lat', 0)
-        longitude = getattr(nx,'lon', 0)
+        latitude = getattr(nx,'lat', 38.895616)
+        longitude = getattr(nx,'lon', -77.044122)
         climb = getattr(nx, 'climb', 0)
         time = '0.0'
         icao = 'USERCRAFT'
@@ -98,6 +107,7 @@ def run_gps_thread():
 #Parses aircraft JSON data and sends valid aircraft through socket
 def send_aircraft_data(path):
     global cur_location
+    global filtering_distance_max_miles
     f = open(path, 'r+')
     f_json = json.load(f)
     for aircraft in f_json['aircraft']:

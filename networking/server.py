@@ -9,18 +9,22 @@ PORT = 55555 # Port to listen on (non-privileged ports are > 1023)
 #global bool to track if server should shut down
 global exit
 exit = False
-
-
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     #Recieves a msgsize amount of bytes from recv_client and forwards it to send_client
     def receive_and_send(recv_client:socket, send_client:socket, msgsize):
-        msgsize = int(msgsize)
-        msg = bytearray()
-        while len(msg) < msgsize :    
-            packet = recv_client.recv(msgsize - len(msg)) # Receieve the incoming message from recv_client
-            msg.extend(packet)
-        send_client.sendall(bytes(str(msgsize), encoding = "utf-8")) # Send message size to send_client
-        send_client.sendall(bytes(msg)) # Send message to send_client
+        #Edge case: sending control messages to local client to start/stop sending
+        if recv_client == None:
+            send_client.sendall(bytes("4", encoding = "utf-8"))
+            send_client.sendall(bytes(msgsize, encoding = "utf-8"))
+        else :
+        #Recieve message and send to other client
+            msgsize = int(msgsize)
+            msg = bytearray()
+            while len(msg) < msgsize :    
+                packet = recv_client.recv(msgsize - len(msg)) # Receieve the incoming message from recv_client
+                msg.extend(packet)
+            send_client.sendall(bytes(str(msgsize), encoding = "utf-8")) # Send message size to send_client
+            send_client.sendall(bytes(msg)) # Send message to send_client
 
     #Send messages recieved from local_client to xr_client
     def handle_local_client_thread():
@@ -37,18 +41,18 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 receive_and_send(local_client, xr_client, msgsize)
             except socket.error:
                 print('XR Client Disconnected : Writing')
-                local_client.sendall(bytes("stop", encoding = 'utf-8')) #tell local client to stop sending until reconnect
+                receive_and_send(None, local_client, "stop") #tell local client to stop sending
                 break
 
     #Send messages recieved from xr_client to local_client
     def handle_xr_client_thread():
         while True:
             try:
-                msg = xr_client.recv(1024)
-                if (msg == b''):
+                msgsize = xr_client.recv(1) # Receive size of incoming range
+                if (msgsize == b''):
                     print('XR Client Disconnected : Reading')
                     return
-                local_client.sendall(msg)
+                receive_and_send(xr_client, local_client, msgsize.decode())
             except socket.error:
                 print('Socket Error: Reading')
 
@@ -56,7 +60,7 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
     def reconnect_to_xr_client():
         xr_client, xr_client_addr2 = s.accept()
         print(f"Reconnected to {xr_client_addr2}")
-        local_client.sendall(bytes('strt', encoding = 'utf-8')) #tell local client to start sending again
+        receive_and_send(None, local_client, "strt") #tell local client to start sending again
         return xr_client
     
     #handle shutdown on CTRL+C

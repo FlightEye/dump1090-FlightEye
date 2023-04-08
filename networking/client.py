@@ -75,7 +75,6 @@ def send_json(json_str):
 def send_gps_data():
     global cur_location
     nx = gpsd.next()
-                
     if nx['class'] == 'TPV':
         altitude = getattr(nx, 'alt', 0)
         track = getattr(nx, 'track', 0)
@@ -93,7 +92,6 @@ def send_gps_data():
         gps_dict = dict({'alt': altitude, 'track': track, 'speed':speed, 'lon':longitude, 'lat': latitude, 'climb': climb, 'time': time, 'icao': icao, 'isGPS':'true'})
         json_gps = json.dumps(gps_dict)
         send_json(json_gps)
-        gpsd.next()
     else:
         gpsd.next()
         print('GPS Poll Failed')
@@ -120,7 +118,9 @@ def send_aircraft_data(path):
             #airplane is within maximum and minimum filtering distance
             if rel_dist_miles < filtering_distance_max_miles and rel_dist_miles > filtering_distance_min_miles:
                 aircraft.update({'isGPS':'false'})
-                aircraft.update({'hex':icao_to_n(aircraft['hex'])})
+                tempHex = icao_to_n(aircraft['hex'])
+                if tempHex != None:
+                    aircraft.update({'hex':icao_to_n(aircraft['hex'])})
                 j_aircraft = json.dumps(aircraft)
                 send_json(j_aircraft)
     f.close()
